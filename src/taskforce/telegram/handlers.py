@@ -1,24 +1,16 @@
 import logging
 
 from aiogram import Router
-from aiogram.enums import ChatAction, ParseMode
+from aiogram.enums import ChatAction
 from aiogram.filters import CommandStart
 from aiogram.types import Message
 from langchain_core.messages import HumanMessage
 
+from taskforce.telegram.formatter import format_for_telegram, TELEGRAM_MAX_LEN
+
 logger = logging.getLogger(__name__)
 
 router = Router(name="main")
-
-
-async def _send_markdown(message: Message, text: str) -> None:
-    """Send a message as Markdown, fallback to plain text if Telegram rejects it."""
-    for i in range(0, len(text), 4000):
-        chunk = text[i : i + 4000]
-        try:
-            await message.answer(chunk, parse_mode=ParseMode.MARKDOWN)
-        except Exception:
-            await message.answer(chunk)
 
 
 @router.message(CommandStart())
@@ -68,7 +60,8 @@ async def handle_message(message: Message) -> None:
         if not response_text:
             response_text = "Traitement termine sans reponse."
 
-        await _send_markdown(message, response_text)
+        formatted = format_for_telegram(response_text)
+        await message.answer(formatted)
 
     except Exception:
         logger.exception("Error processing message")

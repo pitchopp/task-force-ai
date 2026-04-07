@@ -21,5 +21,5 @@ def create_bot() -> Bot:
     settings = get_settings()
     return Bot(
         token=settings.bot_token,
-        default=DefaultBotProperties(parse_mode=None),
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
     )
