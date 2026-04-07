@@ -1,7 +1,6 @@
 import logging
 
 from claude_agent_sdk import (
-    AgentDefinition,
     ClaudeAgentOptions,
     ResultMessage,
     query,
@@ -55,27 +54,6 @@ def _build_system_prompt() -> str:
     return BRAIN_SYSTEM_PROMPT.format(available_agents=agents_desc)
 
 
-def _build_subagents() -> dict[str, AgentDefinition]:
-    agents: dict[str, AgentDefinition] = {}
-    for name, config in registry.all().items():
-        agents[name] = AgentDefinition(
-            description=config.description,
-            prompt=config.system_prompt,
-            tools=config.tools or None,
-            model=_map_model(config.model),
-        )
-    return agents
-
-
-def _map_model(model: str) -> str | None:
-    mapping = {
-        "claude-opus-4-6": "opus",
-        "claude-sonnet-4-6": "sonnet",
-        "claude-haiku-4-5": "haiku",
-    }
-    return mapping.get(model, None)
-
-
 def _format_history(messages) -> str:
     from langchain_core.messages import AIMessage, HumanMessage
 
@@ -91,13 +69,7 @@ def _format_history(messages) -> str:
 
 async def think(user_message: str, messages=None) -> str:
     settings = get_settings()
-    subagents = _build_subagents()
 
-    allowed_tools = ["WebSearch", "WebFetch"]
-    if subagents:
-        allowed_tools.append("Agent")
-
-    # Build prompt with history
     prompt = user_message
     if messages and len(messages) > 1:
         history = _format_history(messages)
@@ -106,8 +78,6 @@ async def think(user_message: str, messages=None) -> str:
     options = ClaudeAgentOptions(
         system_prompt=_build_system_prompt(),
         model=settings.brain_model,
-        allowed_tools=allowed_tools,
-        agents=subagents if subagents else None,
         permission_mode="bypassPermissions",
     )
 
