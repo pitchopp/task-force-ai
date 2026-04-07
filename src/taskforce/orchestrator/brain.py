@@ -1,13 +1,14 @@
 import logging
-
 from typing import Any
 
 from claude_agent_sdk import (
+    AssistantMessage,
     ClaudeAgentOptions,
+    ClaudeSDKClient,
     PermissionResultAllow,
-    ResultMessage,
+    TextBlock,
     ToolPermissionContext,
-    query,
+    ToolUseBlock,
 )
 
 from config.settings import get_settings
@@ -95,11 +96,32 @@ async def think(user_message: str, messages=None) -> str:
         can_use_tool=_auto_approve_tool,
     )
 
-    result_text = ""
+    full_response = ""
+    last_final_text = ""
 
-    async for message in query(prompt=prompt, options=options):
-        if isinstance(message, ResultMessage):
-            if message.subtype == "success" and message.result:
-                result_text = message.result
+    async with ClaudeSDKClient(options=options) as client:
+        await client.query(prompt)
+        async for message in client.receive_response():
+            if not isinstance(message, AssistantMessage):
+                continue
 
-    return result_text or "Je n'ai pas pu traiter cette demande."
+            text_parts = [
+                block.text for block in message.content if isinstance(block, TextBlock)
+            ]
+            tool_uses = [
+                block for block in message.content if isinstance(block, ToolUseBlock)
+            ]
+            chunk = "".join(text_parts).strip()
+
+            if chunk:
+                full_response += ("\n\n" if full_response else "") + chunk
+
+            if tool_uses:
+                for tool in tool_uses:
+                    logger.info("agent tool: %s input=%r", tool.name, tool.input)
+                continue
+
+            if chunk:
+                last_final_text = chunk
+
+    return last_final_text or full_response or "Je n'ai pas pu traiter cette demande."
