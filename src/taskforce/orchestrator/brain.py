@@ -1,13 +1,9 @@
 import logging
-from typing import Any
 
 from claude_agent_sdk import (
     AgentDefinition,
     ClaudeAgentOptions,
-    AssistantMessage,
     ResultMessage,
-    TextBlock,
-    ToolUseBlock,
     query,
 )
 
@@ -18,15 +14,23 @@ logger = logging.getLogger(__name__)
 
 BRAIN_SYSTEM_PROMPT = """\
 Tu es le "bras droit" de l'utilisateur dans le systeme TaskForce AI.
-Ton role est de comprendre ses instructions, planifier l'execution, et repondre de maniere claire et utile.
+Tu es un orchestrateur : tu ne fais PAS le travail toi-meme sauf pour les questions triviales \
+(salutations, questions simples de culture generale, clarifications).
+
+## Ton role
+1. Comprendre l'intention de l'utilisateur.
+2. Si un agent specialise peut traiter la demande, delegue-lui via l'outil Agent \
+et informe l'utilisateur de la delegation (ex: "Je confie ca a l'agent X...").
+3. Si AUCUN agent ne correspond, propose a l'utilisateur d'en creer un. \
+Decris quel agent serait utile, ses capacites, et demande validation. \
+Si l'utilisateur valide, appelle l'outil flag_capability_gap.
+4. Ne reponds directement que pour les demandes triviales qui ne necessitent pas d'agent.
 
 ## Regles
-1. Reponds toujours en francais sauf si l'utilisateur parle dans une autre langue.
-2. Pour les questions simples, reponds directement.
-3. Pour les taches complexes, decompose-les et explique ton approche.
-4. Si tu ne peux pas accomplir une tache avec tes capacites actuelles, dis-le clairement \
-et suggere quel type d'agent specialise pourrait aider.
-5. Sois concis et actionnable dans tes reponses.
+- Reponds toujours en francais sauf si l'utilisateur parle dans une autre langue.
+- Sois concis et actionnable.
+- Quand tu delegues, dis clairement a qui et pourquoi.
+- Quand tu proposes un nouvel agent, sois precis sur ce qu'il ferait.
 
 ## Agents disponibles
 {available_agents}
@@ -34,21 +38,24 @@ et suggere quel type d'agent specialise pourrait aider.
 
 
 def _build_system_prompt() -> str:
-    """Build the brain's system prompt with current agent registry info."""
     agents = registry.all()
     if not agents:
-        agents_desc = "Aucun agent specialise disponible pour le moment."
+        agents_desc = (
+            "Aucun agent specialise disponible pour le moment. "
+            "Si la demande necessite un traitement specifique, "
+            "propose a l'utilisateur de creer un agent adapte."
+        )
     else:
         lines = []
         for name, config in agents.items():
-            lines.append(f"- **{name}**: {config.description}")
+            caps = ", ".join(config.capabilities) if config.capabilities else "general"
+            lines.append(f"- **{name}** ({caps}): {config.description}")
         agents_desc = "\n".join(lines)
 
     return BRAIN_SYSTEM_PROMPT.format(available_agents=agents_desc)
 
 
 def _build_subagents() -> dict[str, AgentDefinition]:
-    """Convert registry configs to Claude Agent SDK AgentDefinitions."""
     agents: dict[str, AgentDefinition] = {}
     for name, config in registry.all().items():
         agents[name] = AgentDefinition(
@@ -61,7 +68,6 @@ def _build_subagents() -> dict[str, AgentDefinition]:
 
 
 def _map_model(model: str) -> str | None:
-    """Map model config string to SDK model hint."""
     mapping = {
         "claude-opus-4-6": "opus",
         "claude-sonnet-4-6": "sonnet",
@@ -71,11 +77,10 @@ def _map_model(model: str) -> str | None:
 
 
 def _format_history(messages) -> str:
-    """Format LangGraph message history into a prompt for the SDK."""
-    from langchain_core.messages import HumanMessage, AIMessage
+    from langchain_core.messages import AIMessage, HumanMessage
 
     parts: list[str] = []
-    for msg in messages[:-1]:  # All except the last (current) message
+    for msg in messages[:-1]:
         if isinstance(msg, HumanMessage):
             parts.append(f"[Utilisateur]: {msg.content}")
         elif isinstance(msg, AIMessage):
@@ -85,10 +90,6 @@ def _format_history(messages) -> str:
 
 
 async def think(user_message: str, messages=None) -> str:
-    """
-    Process a user message through the Brain agent using Claude Agent SDK.
-    Includes conversation history for continuity.
-    """
     settings = get_settings()
     subagents = _build_subagents()
 
@@ -96,7 +97,7 @@ async def think(user_message: str, messages=None) -> str:
     if subagents:
         allowed_tools.append("Agent")
 
-    # Build prompt with history for conversation continuity
+    # Build prompt with history
     prompt = user_message
     if messages and len(messages) > 1:
         history = _format_history(messages)
