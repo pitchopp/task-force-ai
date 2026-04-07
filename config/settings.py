@@ -9,6 +9,7 @@ class Settings(BaseSettings):
     # Telegram
     bot_token: str
     webhook_url: str = ""
+    webhook_secret: str = ""
     allowed_user_ids: list[int] = []
 
     # Anthropic — API key is optional.

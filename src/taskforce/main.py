@@ -44,6 +44,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await bot.set_webhook(
                 url=f"{settings.webhook_url}/webhook",
                 drop_pending_updates=True,
+                secret_token=settings.webhook_secret or None,
             )
             logger.info("Webhook set to %s/webhook", settings.webhook_url)
         else:
